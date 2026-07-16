@@ -10,3 +10,12 @@ class LLMFactory:
                 temperature=0.2,
         )
     
+    @staticmethod
+    def cohere():
+        from langchain_cohere import ChatCohere
+        return ChatCohere(
+                model="command-a-plus-05-2026",
+                temperature=0,
+                cohere_api_key=Settings.COHERE_API_KEY
+        )
+    

@@ -6,6 +6,7 @@ langchain-google-genai
 langchain-text-splitters
 langchain-pinecone 
 langgraph-checkpoint
+langchain_cohere
 
 pinecone
 faiss-cpu
