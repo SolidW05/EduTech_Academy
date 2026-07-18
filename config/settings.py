@@ -9,6 +9,8 @@ class Settings:
     
     GEMINI_MODEL = "gemini-3.1-flash-lite"
     
+    GEMMA_MODEL = "gemma-4-26b-a4b-it"
+    
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     
     COHERE_API_KEY = os.getenv("COHERE_API_KEY")    
