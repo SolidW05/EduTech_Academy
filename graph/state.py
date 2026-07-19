@@ -1,4 +1,5 @@
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional, List, Annotated
+import operator
 
 class AgentState(TypedDict, total = False):
   question: str
@@ -11,3 +12,4 @@ class AgentState(TypedDict, total = False):
   are_docs: Optional[bool]
   rag_success: bool
   final_action: str
+  history: Annotated[List[dict], operator.add]

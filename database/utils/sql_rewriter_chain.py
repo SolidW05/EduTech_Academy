@@ -10,9 +10,8 @@ llm = LLMFactory.cohere()
 
 sql_rewriter_prompt = ChatPromptTemplate.from_messages([
     ("system", SQL_QUERY_REWRITER_PROMPT),
-    ("human", "{question}")
+    ("human", "Historial de la conversación:\n{history}\n\nPregunta actual:\n{question}")
 ])
-
 
 sql_rewriter_chain = (
     sql_rewriter_prompt

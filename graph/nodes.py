@@ -15,26 +15,33 @@ from langgraph.types import interrupt
 from langchain_core.output_parsers import StrOutputParser
 
 
+def format_history(history):
+    return "\n".join(f"Usuario: {h['question']}\nAsistente: {h['answer']}" for h in history)
+
+
 """
 Nodo de sql
 """ 
 def sql_node(state: AgentState) -> AgentState:
     question = state['question']
+    history = format_history(state['history'])
     
-    respuesta = consultar_base_de_datos(question)
+    respuesta = consultar_base_de_datos(question, history)
     
     return {
         **state,
-        'answer':respuesta
+        'answer':respuesta,
+        "history": [{"question": question, "answer": respuesta}]
     }
 """
 Nodo del rag
 """ 
 def rag_node(state: AgentState) -> AgentState:
     
-    question = question = state['question']
+    question = state['question']
+    history = format_history(state['history'])
     
-    respuesta = responder_con_rag(question)
+    respuesta = responder_con_rag(question, history=history)
     
     return {
         **state,
@@ -42,7 +49,8 @@ def rag_node(state: AgentState) -> AgentState:
         "rag_success": respuesta['rag_success'],
         "docs": respuesta['docs'] if respuesta['docs'] else None,
         "answer": respuesta['answer'] if respuesta['answer'] else None,
-        'final_action':'rag'
+        'final_action':'rag',
+        "history": [{"question": question, "answer": respuesta}]
     }
 
 """
@@ -64,7 +72,9 @@ def decision_node(state: AgentState) -> str:
     
     router_prompt = ChatPromptTemplate.from_messages([
     ("system", ROUTER_PROMPT),
-    ("human", "{question}")
+    ("human", 
+     "Historial de la conversación:\n{history}\n\n"
+     "Pregunta actual del usuario:\n{question}")
 ])
 
     router_chain = (
@@ -73,7 +83,8 @@ def decision_node(state: AgentState) -> str:
     )
 
     result = router_chain.invoke({
-        "question": state["question"]
+        "question": state["question"],
+        "history": format_history(state.get("history", []))
     })
     
     return {**state,
@@ -107,10 +118,16 @@ def hybrid_node(state: AgentState) -> AgentState:
         tools=tools
         
     )
+    question =  state["question"]
     
-    resultado = hybrid_agent.invoke({
-        "messages": [("human", state["question"])]
-    })
+    messages = []
+    for h in state.get("history", []):
+        messages.append(("human", h["question"]))
+        messages.append(("ai", h["answer"]))
+    messages.append(("human", state["question"]))
+
+    resultado = hybrid_agent.invoke({"messages": messages})
+    
 
     mensajes = resultado["messages"]
     respuesta_final = mensajes[-1].text
@@ -133,7 +150,8 @@ def hybrid_node(state: AgentState) -> AgentState:
         #"rag_artifact": rag_artifact,   # puede ser None si no se llamó
         #"sql_artifact": sql_artifact,   # puede ser None si no se llamó
         "answer": respuesta_final,
-        "final_action": "hybrid"
+        "final_action": "hybrid",
+        "history": [{"question": question, "answer": respuesta_final}]
     }
 '''
 nodo ask info

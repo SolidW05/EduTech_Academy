@@ -26,6 +26,9 @@ Reglas:
 - Si existen varios fragmentos relevantes, intégralos en una única respuesta coherente.
 - No menciones que utilizaste documentos o un sistema RAG.
 - Mantén un tono profesional y claro.
+- Se te puede proporcionar el historial de la conversación como referencia para entender
+  preguntas de seguimiento; no lo confundas con el Contexto documental, que sigue siendo
+  tu única fuente para el contenido de la respuesta.
 
 Contexto:
 
@@ -34,7 +37,7 @@ Contexto:
     ),
     (
         "human",
-        "{question}"
+        "Historial de la conversación:\n{history}\n\nPregunta actual:\n{question}"
     )
 ])
 
@@ -44,7 +47,7 @@ rag_chain = (
     | StrOutputParser()
 )
 
-def responder_con_rag(pregunta: str) -> str:
+def responder_con_rag(pregunta: str, history: str) -> str:
 
     rag_rewritten_question = rag_rewriter_chain.invoke({"question": pregunta})
 
@@ -67,7 +70,8 @@ def responder_con_rag(pregunta: str) -> str:
 
     answer = rag_chain.invoke({
         "context": context,
-        "question": f"pregunta original: {pregunta}, pregunta reescrita: {rag_rewritten_question}"
+        "question": f"pregunta original: {pregunta}, pregunta reescrita: {rag_rewritten_question}",
+        "history": history
     })
     
     return  {
