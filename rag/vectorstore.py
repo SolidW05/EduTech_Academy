@@ -1,4 +1,4 @@
-from spliter import get_chunks
+from rag.spliter import get_chunks
 from pathlib import Path
 from langchain_community.vectorstores import FAISS
 from ai_models.embeddings_models import EmbeddingsFactory
@@ -31,7 +31,7 @@ def load_vectorstore():
         
 
 def build_vectorstore():
-    chunks = get_chunks
+    chunks = get_chunks()
     batch_size = 50
     
     # Primer lote

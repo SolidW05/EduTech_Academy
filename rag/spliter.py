@@ -1,5 +1,5 @@
 from langchain_text_splitters import MarkdownTextSplitter
-from loader import get_docs
+from rag.loader import get_docs
 
 splitter = MarkdownTextSplitter(chunk_size=1000, 
                                 chunk_overlap=100)

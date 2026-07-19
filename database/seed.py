@@ -1,6 +1,6 @@
 from datetime import date
 from sqlalchemy.orm import Session
-from models import *
+from database.models import *
 
 
 def seed():

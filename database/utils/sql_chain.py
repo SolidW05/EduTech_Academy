@@ -1,9 +1,9 @@
 from langchain_core.runnables import RunnablePassthrough
 
-from sql_executor import sql_executor
-from sql_generator import sql_generator
-from sql_validator import sql_validator
-from sql_response_generator import sql_response_generator
+from database.utils.sql_executor import sql_executor
+from database.utils.sql_generator import sql_generator
+from database.utils.sql_validator import sql_validator
+from database.utils.sql_response_generator import sql_response_generator
 
 sql_chain = (
     RunnablePassthrough()

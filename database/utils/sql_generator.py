@@ -2,7 +2,7 @@ from langchain_classic.chains import create_sql_query_chain
 from langchain_community.utilities import SQLDatabase
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from sql_rewriter_chain import sql_rewriter_chain
+from database.utils.sql_rewriter_chain import sql_rewriter_chain
 from ai_models.llm import LLMFactory
 from config.database import engine
 
