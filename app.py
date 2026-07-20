@@ -1,19 +1,24 @@
 """
 app.py
 
-Interfaz de Streamlit para mostrar el agente de LangGraph (rag / sql / hybrid / ask_info).
+Interfaz de Streamlit para mostrar el agente de LangGraph (rag / sql / hybrid / ask_info)
+de EduTech Academy.
 
-Notas importantes sobre el manejo del grafo:
+Notas sobre el manejo del grafo:
 - El grafo se compila con MemorySaver, que guarda el estado en memoria del PROCESO
-  (no en disco). Por eso el grafo se construye UNA SOLA VEZ con @st.cache_resource:
-  si lo reconstruyéramos en cada rerun de Streamlit, perderíamos el checkpoint y
-  el hilo de conversación no podría "recordar" nada.
+  (no en disco). Por eso se construye UNA SOLA VEZ con @st.cache_resource: si se
+  reconstruyera en cada rerun de Streamlit, se perdería el checkpoint y el hilo de
+  conversación no podría "recordar" nada.
 - El nodo `ask_info` usa `interrupt(...)`, lo que pausa la ejecución del grafo.
-  Cuando eso pasa, `graph.stream(...)` entrega un chunk especial con la clave
-  "__interrupt__". Detectamos esto, mostramos la pregunta de aclaración al
-  usuario, y cuando responde, reanudamos el grafo con `Command(resume=respuesta)`
-  usando el MISMO thread_id (config).
-- Ajustá el import de `build_graph` de acuerdo a dónde vive realmente en tu proyecto.
+  En vez de detectar la interrupción parseando los chunks del stream (formato que
+  puede variar entre versiones de LangGraph), usamos `graph.get_state(config)`
+  como única fuente de verdad:
+    - `snapshot.next`                -> si no está vacío, el grafo quedó pausado
+    - `snapshot.tasks[i].interrupts` -> el valor de la interrupción pendiente
+  Esto evita el bug de "el primer mensaje de respuesta no hace nada": antes
+  dependíamos de un flag manual que podía desincronizarse del estado real del
+  grafo (por ejemplo si `decision` volvía a rutear a `ask_info` una segunda vez).
+- Ajustá el import de `build_graph` según dónde vive en tu proyecto.
 """
 
 import uuid
@@ -25,7 +30,7 @@ from langgraph.types import Command
 from graph.graph import build_graph
 
 
-st.set_page_config(page_title="Agente LangGraph", page_icon="🤖", layout="centered")
+st.set_page_config(page_title="Agente EduTech Academy", page_icon="🎓", layout="centered")
 
 
 # ---------------------------------------------------------------------------
@@ -46,9 +51,7 @@ def init_session():
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = str(uuid.uuid4())
     if "messages" not in st.session_state:
-        st.session_state.messages = []  # [{"role": "user"/"assistant", "content": str, "route": str|None}]
-    if "pending_interrupt" not in st.session_state:
-        st.session_state.pending_interrupt = False
+        st.session_state.messages = []  # [{"role", "content", "route"?, "docs"?}]
 
 
 init_session()
@@ -57,7 +60,28 @@ init_session()
 def new_conversation():
     st.session_state.thread_id = str(uuid.uuid4())
     st.session_state.messages = []
-    st.session_state.pending_interrupt = False
+
+
+config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+
+# ---------------------------------------------------------------------------
+# Helpers de estado del grafo (fuente única de verdad sobre interrupts)
+# ---------------------------------------------------------------------------
+def is_graph_paused() -> bool:
+    """True si el grafo quedó esperando un resume (ej. interrupt en ask_info)."""
+    return bool(graph.get_state(config).next)
+
+
+def get_pending_interrupt_text():
+    snapshot = graph.get_state(config)
+    for task in snapshot.tasks:
+        if task.interrupts:
+            return task.interrupts[0].value
+    return None
+
+
+pending_interrupt = is_graph_paused()
 
 
 # ---------------------------------------------------------------------------
@@ -65,44 +89,123 @@ def new_conversation():
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ Configuración")
-    debug_mode = st.toggle("Modo debug (mostrar docs / artefactos)", value=False)
+    debug_mode = st.toggle("Modo debug (mostrar docs recuperados)", value=False)
     st.caption(f"Thread ID:\n`{st.session_state.thread_id}`")
     if st.button("🔄 Nueva conversación", use_container_width=True):
         new_conversation()
         st.rerun()
 
 
-st.title("🤖 Agente LangGraph")
-st.caption("rag · sql · hybrid · ask_info")
+# ---------------------------------------------------------------------------
+# Encabezado + qué puede preguntar el usuario
+# ---------------------------------------------------------------------------
+st.title("🎓 Agente EduTech Academy")
+
+with st.expander("❓ ¿Qué puedo preguntar?", expanded=(len(st.session_state.messages) == 0)):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**📄 Políticas y documentación**")
+        st.markdown(
+            "- Reglamento del estudiante\n"
+            "- Cómo usar la plataforma\n"
+            "- Becas\n"
+            "- Reembolsos\n"
+            "- Privacidad\n"
+            "- Términos y condiciones\n"
+            "- Preguntas frecuentes\n"
+            "- Certificados\n"
+            "- Soporte técnico\n"
+            "- Catálogo académico"
+        )
+    with col2:
+        st.markdown("**🗄️ Datos académicos**")
+        st.markdown(
+            "- Cursos: precio, duración, nivel, cupos\n"
+            "- Categorías de cursos\n"
+            "- Instructores y su especialidad\n"
+            "- Inscripciones y progreso\n"
+            "- Becas otorgadas\n"
+            "- Certificados emitidos"
+        )
+    st.caption(
+        "Ejemplos: «¿cuál es la política de reembolsos?» · "
+        "«¿cuánto cuesta el curso de Python y cuántos cupos quedan?» · "
+        "«¿cómo verifico si un certificado es válido?»"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Lógica de invocación del grafo (usando .stream())
+# Render "lindo" de documentos recuperados (en vez de st.json crudo)
+# ---------------------------------------------------------------------------
+def _get(obj, *keys, default=None):
+    """Busca el primer campo disponible, tanto en dict como en atributos de objeto."""
+    for key in keys:
+        if isinstance(obj, dict) and obj.get(key) not in (None, ""):
+            return obj[key]
+        if hasattr(obj, key) and getattr(obj, key) not in (None, ""):
+            return getattr(obj, key)
+    return default
+
+
+def render_docs(docs):
+    if not docs:
+        st.caption("No se recuperaron documentos.")
+        return
+
+    for i, doc in enumerate(docs, start=1):
+        content = _get(doc, "page_content", "content", "text", default=str(doc))
+        metadata = _get(doc, "metadata", default={}) or {}
+        source = _get(doc, "source") or (
+            metadata.get("source") if isinstance(metadata, dict) else None
+        )
+        score = _get(doc, "score") or (
+            metadata.get("score") if isinstance(metadata, dict) else None
+        )
+        source_name = source.replace("\\", "/").split("/")[-1] if source else f"Fragmento {i}"
+
+        with st.container(border=True):
+            header = f"📄 **{source_name}**"
+            if score is not None:
+                try:
+                    header += f"  ·  relevancia: {float(score):.2f}"
+                except (TypeError, ValueError):
+                    pass
+            st.markdown(header)
+            preview = content if len(content) <= 500 else content[:500] + "…"
+            st.markdown(preview)
+
+
+# ---------------------------------------------------------------------------
+# Invocación del grafo (con .stream())
 # ---------------------------------------------------------------------------
 def run_graph(user_input: str, is_resume: bool):
-    config = {"configurable": {"thread_id": st.session_state.thread_id}}
     stream_input = Command(resume=user_input) if is_resume else {"question": user_input}
 
-    interrupt_question = None
+    for _ in graph.stream(stream_input, config=config, stream_mode="updates"):
+        pass  # consumimos todo el stream; el estado se lee después con get_state
 
-    for chunk in graph.stream(stream_input, config=config, stream_mode="updates"):
-        if "__interrupt__" in chunk:
-            interrupt_obj = chunk["__interrupt__"][0]
-            interrupt_question = interrupt_obj.value
-            break
+    # `snapshot.next` es la ÚNICA fuente de verdad de si el grafo quedó
+    # pausado (es el mismo chequeo que is_graph_paused()). No alcanza con
+    # mirar si get_pending_interrupt_text() devolvió texto: si por lo que
+    # sea `tasks[i].interrupts` viene vacío aunque el grafo SÍ esté
+    # pausado, esta rama caía al "final_state" de abajo y devolvía una
+    # respuesta vacía -> el interrupt se "perdía" en ese mensaje y recién
+    # se resolvía con el próximo (que sí se mandaba como resume, porque
+    # is_graph_paused() detectaba bien el estado pausado). De ahí el
+    # patrón de "tengo que mandar un mensaje y después otro".
+    if is_graph_paused():
+        pending = get_pending_interrupt_text()
+        return {
+            "type": "interrupt",
+            "content": pending or "Necesito un poco más de información para continuar. ¿Podrías dar más detalles?",
+        }
 
-    if interrupt_question is not None:
-        return {"type": "interrupt", "content": interrupt_question}
-
-    # El grafo llegó a END (o volvió a esperar input): leemos el estado final
     final_state = graph.get_state(config).values
     return {
         "type": "final",
         "answer": final_state.get("answer"),
         "final_action": final_state.get("final_action"),
         "docs": final_state.get("docs"),
-        "are_docs": final_state.get("are_docs"),
-        "rag_success": final_state.get("rag_success"),
     }
 
 
@@ -116,27 +219,23 @@ for msg in st.session_state.messages:
             st.caption(f"Ruta: `{msg['route']}`")
         if debug_mode and msg.get("docs"):
             with st.expander("📄 Docs recuperados"):
-                st.json(msg["docs"])
+                render_docs(msg["docs"])
 
 
 # ---------------------------------------------------------------------------
 # Input del usuario
 # ---------------------------------------------------------------------------
-placeholder = (
-    "Respondé la aclaración pedida..."
-    if st.session_state.pending_interrupt
-    else "Escribí tu pregunta..."
-)
+placeholder = "Respondé la aclaración pedida..." if pending_interrupt else "Escribí tu pregunta..."
 
 if prompt := st.chat_input(placeholder):
-    st.session_state.messages.append({"role": "user", "content": prompt, "route": None})
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         with st.spinner("Pensando..."):
             try:
-                result = run_graph(prompt, is_resume=st.session_state.pending_interrupt)
+                result = run_graph(prompt, is_resume=pending_interrupt)
             except Exception as e:
                 st.error(f"Error ejecutando el grafo: {e}")
                 st.stop()
@@ -146,7 +245,6 @@ if prompt := st.chat_input(placeholder):
             st.session_state.messages.append(
                 {"role": "assistant", "content": result["content"], "route": "ask_info"}
             )
-            st.session_state.pending_interrupt = True
         else:
             answer = result.get("answer") or "_(el agente no devolvió una respuesta)_"
             st.markdown(answer)
@@ -154,7 +252,7 @@ if prompt := st.chat_input(placeholder):
                 st.caption(f"Ruta: `{result['final_action']}`")
             if debug_mode and result.get("docs"):
                 with st.expander("📄 Docs recuperados"):
-                    st.json(result["docs"])
+                    render_docs(result["docs"])
 
             st.session_state.messages.append(
                 {
@@ -164,4 +262,3 @@ if prompt := st.chat_input(placeholder):
                     "docs": result.get("docs"),
                 }
             )
-            st.session_state.pending_interrupt = False
