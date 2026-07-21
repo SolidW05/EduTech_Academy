@@ -19,6 +19,8 @@ El agente utiliza un flujo conversacional inteligente que combina **Recuperació
 El agente ha sido desplegado exitosamente en la nube utilizando **Oracle Cloud Infrastructure (OCI)**. Está disponible de forma pública para pruebas en el siguiente enlace:
 
 👉 **[http://140.84.166.161/](http://140.84.166.161/)**
+Si estas teniendo problemas para acceder al agente tambien puedes probar el siguiente enlace:
+👉 **[http://140.84.166.161:8501/](http://140.84.166.161:8501/)**
 
 ### Detalles del Despliegue en OCI:
 - **Infraestructura**: Instancia VM Compute de OCI (`VM.Standard.A1.Flex` u `Always Free`).
